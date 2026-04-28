@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from core.config import settings
 from schemas.contract_analysis import AnalyzeContractResponse, OCRWarning
-from services import llm, ocr, text_cleaner
+from services import llm, ocr, text_cleaner, orchestrator
 
 RESPOSTA_DIR = Path("resposta")
 RESPOSTA_DIR.mkdir(exist_ok=True)
@@ -15,7 +15,7 @@ RESPOSTA_DIR.mkdir(exist_ok=True)
 app = FastAPI(
     title="Extrator Infralize — Análise de Contratos",
     description="API para OCR e análise de riscos em contratos de construção civil.",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 ALLOWED_TYPES = {"application/pdf"}
@@ -29,6 +29,15 @@ def health():
 
 @app.post("/analyze-contract", response_model=AnalyzeContractResponse, tags=["análise"])
 async def analyze_contract(file: UploadFile = File(..., description="PDF do contrato")):
+    """
+    Analisa um contrato em PDF usando a arquitetura de dois estágios.
+    
+    **Estágio 1 (Paralelo):** Análises determinísticas (Passos 1-3)
+    - Busca riscos graves, desequilíbrios, omissões
+    
+    **Estágio 2 (Paralelo com Calibração):** Análises generalizadas (Passos 4-6)
+    - Usa Estágio 1 como padrão para encontrar riscos similares
+    """
     # ── Validação básica ─────────────────────────────────────────────────────
     if file.content_type not in ALLOWED_TYPES:
         raise HTTPException(
@@ -73,9 +82,9 @@ async def analyze_contract(file: UploadFile = File(..., description="PDF do cont
     # ── Limpeza do texto ─────────────────────────────────────────────────────
     clean_text = text_cleaner.clean(ocr_result.text)
 
-    # ── Análise via LLM ──────────────────────────────────────────────────────
+    # ── Análise via Arquitetura de Dois Estágios ────────────────────────────
     try:
-        analysis = llm.analyze_contract(clean_text)
+        analysis = await orchestrator.execute_contract_analysis(clean_text)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Falha na análise do modelo: {exc}") from exc
 
