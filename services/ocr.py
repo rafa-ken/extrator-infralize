@@ -1,30 +1,61 @@
 """
-Serviço de OCR.
+Serviço de extração de texto de PDFs.
 
-Converte cada página do PDF em imagem (via pdf2image/Poppler) e
-executa o Tesseract em cada uma delas. O texto de todas as páginas
-é concatenado e a confiança retornada é a média global.
+Estratégia em duas camadas:
+  1. pdfplumber — extração nativa da camada de texto do PDF (rápido, sem perda)
+  2. Tesseract  — fallback para PDFs escaneados (imagens sem texto embutido)
+
+O fallback só é acionado quando a extração nativa retorna menos de
+MIN_NATIVE_CHARS caracteres úteis, o que indica PDF escaneado ou corrompido.
 """
 
 from dataclasses import dataclass
+from io import BytesIO
 
-import pytesseract
-from pdf2image import convert_from_bytes
+import pdfplumber
+
+MIN_NATIVE_CHARS = 100  # abaixo disso, considera PDF escaneado e aciona OCR
 
 
 @dataclass
 class OCRResult:
     text: str
-    mean_confidence: float  # 0–100
+    mean_confidence: float  # 0–100; 100.0 = extração nativa (sem OCR)
+    extraction_method: str  # "native" | "ocr"
 
 
 def extract_text(pdf_bytes: bytes, lang: str = "por+eng") -> OCRResult:
     """
-    Extrai texto de um PDF usando Tesseract.
+    Extrai texto de um PDF.
 
-    Retorna o texto e a confiança média (0–100).
-    Confiança < 40 geralmente indica scan ruim ou texto ilegível.
+    Tenta extração nativa primeiro. Se o texto for insuficiente
+    (PDF escaneado), aciona o Tesseract como fallback.
     """
+    native_text = _extract_native(pdf_bytes)
+
+    if len(native_text) >= MIN_NATIVE_CHARS:
+        return OCRResult(text=native_text, mean_confidence=100.0, extraction_method="native")
+
+    ocr_text, mean_confidence = _extract_ocr(pdf_bytes, lang)
+    return OCRResult(text=ocr_text, mean_confidence=mean_confidence, extraction_method="ocr")
+
+
+def _extract_native(pdf_bytes: bytes) -> str:
+    """Extrai texto da camada nativa do PDF via pdfplumber."""
+    pages: list[str] = []
+    with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
+        for page in pdf.pages:
+            text = page.extract_text(x_tolerance=2, y_tolerance=2) or ""
+            if text.strip():
+                pages.append(text.strip())
+    return "\n\n".join(pages)
+
+
+def _extract_ocr(pdf_bytes: bytes, lang: str) -> tuple[str, float]:
+    """Converte PDF em imagens e aplica Tesseract. Retorna (texto, confiança_média)."""
+    import pytesseract
+    from pdf2image import convert_from_bytes
+
     from core.config import settings
 
     if settings.tesseract_cmd:
@@ -45,5 +76,4 @@ def extract_text(pdf_bytes: bytes, lang: str = "por+eng") -> OCRResult:
 
     mean_confidence = sum(all_confidences) / len(all_confidences) if all_confidences else 0.0
     combined_text = "\n\n".join(block.strip() for block in all_text if block.strip())
-
-    return OCRResult(text=combined_text, mean_confidence=mean_confidence)
+    return combined_text, mean_confidence

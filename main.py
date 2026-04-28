@@ -44,21 +44,24 @@ async def analyze_contract(file: UploadFile = File(..., description="PDF do cont
             detail=f"Arquivo muito grande. Tamanho máximo: {MAX_SIZE_MB} MB.",
         )
 
-    # ── OCR ──────────────────────────────────────────────────────────────────
+    # ── Extração de texto ────────────────────────────────────────────────────
     try:
         ocr_result = ocr.extract_text(image_bytes, lang=settings.tesseract_lang)
     except Exception as exc:
-        raise HTTPException(status_code=422, detail=f"Falha no OCR: {exc}") from exc
+        raise HTTPException(status_code=422, detail=f"Falha na extração de texto: {exc}") from exc
 
     ocr_warning = OCRWarning(has_warning=False, message="")
 
     if not ocr_result.text:
         raise HTTPException(
             status_code=422,
-            detail="Nenhum texto foi extraído da imagem. Verifique se a imagem contém texto legível.",
+            detail="Nenhum texto foi extraído do documento. Verifique se o PDF contém texto legível.",
         )
 
-    if ocr_result.mean_confidence < settings.ocr_confidence_threshold:
+    if (
+        ocr_result.extraction_method == "ocr"
+        and ocr_result.mean_confidence < settings.ocr_confidence_threshold
+    ):
         ocr_warning = OCRWarning(
             has_warning=True,
             message=(
