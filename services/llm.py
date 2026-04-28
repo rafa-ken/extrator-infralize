@@ -80,7 +80,7 @@ def analyze_contract(contract_text: str) -> ContractAnalysis:
     response = client.chat.completions.create(
         model=settings.groq_model,
         max_tokens=2048,
-        temperature=0.1,
+        temperature=0.0,
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},

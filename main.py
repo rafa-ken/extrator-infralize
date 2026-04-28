@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from core.config import settings
 from schemas.contract_analysis import AnalyzeContractResponse, OCRWarning
-from services import llm, ocr
+from services import llm, ocr, text_cleaner
 
 RESPOSTA_DIR = Path("resposta")
 RESPOSTA_DIR.mkdir(exist_ok=True)
@@ -70,15 +70,18 @@ async def analyze_contract(file: UploadFile = File(..., description="PDF do cont
             ),
         )
 
+    # ── Limpeza do texto ─────────────────────────────────────────────────────
+    clean_text = text_cleaner.clean(ocr_result.text)
+
     # ── Análise via LLM ──────────────────────────────────────────────────────
     try:
-        analysis = llm.analyze_contract(ocr_result.text)
+        analysis = llm.analyze_contract(clean_text)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Falha na análise do modelo: {exc}") from exc
 
     response = AnalyzeContractResponse(
         ocr_warning=ocr_warning,
-        texto_extraido=ocr_result.text,
+        texto_extraido=clean_text,
         analise=analysis,
     )
 
