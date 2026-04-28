@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from core.config import settings
 from schemas.contract_analysis import AnalyzeContractResponse, OCRWarning
-from services import llm, ocr, text_cleaner, orchestrator
+from services import ocr, orchestrator, text_cleaner
 
 RESPOSTA_DIR = Path("resposta")
 RESPOSTA_DIR.mkdir(exist_ok=True)
@@ -82,7 +82,7 @@ async def analyze_contract(file: UploadFile = File(..., description="PDF do cont
     # ── Limpeza do texto ─────────────────────────────────────────────────────
     clean_text = text_cleaner.clean(ocr_result.text)
 
-    # ── Análise via Arquitetura de Dois Estágios ────────────────────────────
+    # ── Análise via LLM (dois estágios) ─────────────────────────────────────
     try:
         analysis = await orchestrator.execute_contract_analysis(clean_text)
     except Exception as exc:
